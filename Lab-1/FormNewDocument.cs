@@ -22,7 +22,7 @@ namespace Lab_1
         /// <summary>
         /// Холст с изображением
         /// </summary>
-        private Bitmap bitmap;
+        public Bitmap bitmap;
 
         /// <summary>
         /// Временный холст с изображением

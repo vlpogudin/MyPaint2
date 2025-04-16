@@ -1,7 +1,11 @@
-﻿using System;
+﻿using PluginInterface;
+using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Reflection;
+using System.Text.Json;
 using System.Windows.Forms;
 
 namespace Lab_1
@@ -11,6 +15,10 @@ namespace Lab_1
     /// </summary>
     public partial class MainForm : Form
     {
+        Dictionary<string, IPlugin> plugins = new Dictionary<string, IPlugin>();
+        private const string ConfigFilePath = "plugins.config";
+
+
         #region Свойства главной формы
 
         /// <summary>
@@ -48,6 +56,9 @@ namespace Lab_1
             CurrentWidth = 1;
             MdiChildActivate += MainForm_MdiChildActivate; // Подписываемся на событие активных окон
             LockToolbar(true); // Блокируем все кнопки панели инструментов
+
+            FindPlugins();
+            CreatePluginsMenu();
         }
 
         #endregion
@@ -494,5 +505,155 @@ namespace Lab_1
         }
 
         #endregion
+
+        void FindPlugins()
+        {
+            ConfigClass config = LoadConfig();
+            string folder = AppDomain.CurrentDomain.BaseDirectory;
+            string[] files = Directory.GetFiles(folder, "*.dll");
+
+            if (config.AutoLoad)
+            {
+                LoadAllPlugins(files);
+            }
+            else
+            {
+                foreach (var pluginEntry in config.Plugins)
+                {
+                    if (pluginEntry.Enabled)
+                    {
+                        string filePath = Path.Combine(folder, pluginEntry.FileName);
+                        if (File.Exists(filePath))
+                        {
+                            LoadPluginFromFile(filePath);
+                        }
+                    }
+                }
+            }
+
+            // Сохраняем конфигурацию, если она изменилась
+            SaveConfig(config);
+        }
+
+        private void LoadAllPlugins(string[] files)
+        {
+            foreach (string file in files)
+            {
+                LoadPluginFromFile(file);
+            }
+        }
+
+        private void LoadPluginFromFile(string file)
+        {
+            try
+            {
+                Assembly assembly = Assembly.LoadFile(file);
+                foreach (Type type in assembly.GetTypes())
+                {
+                    Type iface = type.GetInterface("PluginInterface.IPlugin");
+                    if (iface != null)
+                    {
+                        IPlugin plugin = (IPlugin)Activator.CreateInstance(type);
+                        plugins.Add(plugin.Name, plugin);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка загрузки плагина {Path.GetFileName(file)}: {ex.Message}");
+            }
+        }
+
+        private ConfigClass LoadConfig()
+        {
+            if (!File.Exists(ConfigFilePath))
+            {
+                // Создаем новый конфигурационный файл
+                ConfigClass config = new ConfigClass { AutoLoad = true };
+                string folder = AppDomain.CurrentDomain.BaseDirectory;
+                string[] files = Directory.GetFiles(folder, "*.dll");
+
+                foreach (string file in files)
+                {
+                    config.Plugins.Add(new PluginEntry
+                    {
+                        FileName = Path.GetFileName(file),
+                        Enabled = true
+                    });
+                }
+                SaveConfig(config);
+                return config;
+            }
+
+            try
+            {
+                string json = File.ReadAllText(ConfigFilePath);
+                return JsonSerializer.Deserialize<ConfigClass>(json) ?? new ConfigClass();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка чтения конфигурационного файла: {ex.Message}");
+                return new ConfigClass();
+            }
+        }
+
+        private void SaveConfig(ConfigClass config)
+        {
+            try
+            {
+                string json = JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(ConfigFilePath, json);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка записи конфигурационного файла: {ex.Message}");
+            }
+        }
+
+        private void CreatePluginsMenu()
+        {
+            foreach (var plugin in plugins)
+            {
+                var item = фильтрыToolStripMenuItem.DropDownItems.Add(plugin.Value.Name);
+                item.Click += (sender, args) =>
+                {
+                    // Получаем активную MDI-дочернюю форму
+                    FormNewDocument activeChild = ActiveMdiChild as FormNewDocument;
+                    if (activeChild != null && activeChild.bitmap != null)
+                    {
+                        // Вызываем плагин
+                        plugin.Value.Transform(activeChild.bitmap);
+                        activeChild.Invalidate(); // Перерисовываем форму
+                    }
+                    else
+                    {
+                        MessageBox.Show("Нет активного документа или изображение не загружено.");
+                    }
+                };
+            }
+        }
+
+        private void ShowPluginDialog()
+        {
+            ConfigClass config = LoadConfig();
+            string folder = AppDomain.CurrentDomain.BaseDirectory;
+            using (var dialog = new PluginForm(config, folder))
+            {
+                if (dialog.ShowDialog() == DialogResult.OK)
+                {
+                    SaveConfig(config);
+                    plugins.Clear();
+                    фильтрыToolStripMenuItem.DropDownItems.Clear();
+                    фильтрыToolStripMenuItem.DropDownItems.Add("Управление плагинами").Click += (s, e) => ShowPluginDialog();
+                    FindPlugins();
+                    CreatePluginsMenu();
+                }
+            }
+        }
+
+        private void управлениеПлагинамиToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            ShowPluginDialog();
+        }
     }
 }
