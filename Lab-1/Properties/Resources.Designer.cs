@@ -73,6 +73,26 @@ namespace Lab_1.Properties {
         /// <summary>
         ///   Поиск локализованного ресурса типа System.Drawing.Bitmap.
         /// </summary>
+        internal static System.Drawing.Bitmap free_icon_undo_circular_arrow_44426 {
+            get {
+                object obj = ResourceManager.GetObject("free-icon-undo-circular-arrow-44426", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Поиск локализованного ресурса типа System.Drawing.Bitmap.
+        /// </summary>
+        internal static System.Drawing.Bitmap free_icon_undo_circular_arrow_44426__1_ {
+            get {
+                object obj = ResourceManager.GetObject("free-icon-undo-circular-arrow-44426 (1)", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Поиск локализованного ресурса типа System.Drawing.Bitmap.
+        /// </summary>
         internal static System.Drawing.Bitmap leave_13087975 {
             get {
                 object obj = ResourceManager.GetObject("leave_13087975", resourceCulture);

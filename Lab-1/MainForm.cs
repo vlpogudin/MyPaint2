@@ -5,7 +5,8 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Reflection;
-using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace Lab_1
@@ -15,9 +16,24 @@ namespace Lab_1
     /// </summary>
     public partial class MainForm : Form
     {
-        Dictionary<string, IPlugin> plugins = new Dictionary<string, IPlugin>();
-        private const string ConfigFilePath = "plugins.config";
+        #region Поля главной формы
 
+        /// <summary>
+        /// Словарь плагинов (ключ - название плагина)
+        /// </summary>
+        Dictionary<string, IPlugin> plugins = new Dictionary<string, IPlugin>();
+
+        /// <summary>
+        /// Путь конфигурационного файла
+        /// </summary>
+        private const string ConfigFilePath = "plugins.txt";
+
+        /// <summary>
+        /// Токен для отмены операций
+        /// </summary>
+        private CancellationTokenSource cts;
+
+        #endregion
 
         #region Свойства главной формы
 
@@ -57,8 +73,8 @@ namespace Lab_1
             MdiChildActivate += MainForm_MdiChildActivate; // Подписываемся на событие активных окон
             LockToolbar(true); // Блокируем все кнопки панели инструментов
 
-            FindPlugins();
-            CreatePluginsMenu();
+            FindPlugins(); // Поиск плагинов
+            CreatePluginsMenu(); // Меню управления плагинами
         }
 
         #endregion
@@ -436,6 +452,7 @@ namespace Lab_1
             toolStripButton4.Enabled = !lockToolbar; // Заливка вкл/выкл
             toolStripButton2.Enabled = !lockToolbar; // Ластик
             toolStripButton8.Enabled = !lockToolbar; // Заливка (ведро)
+            button1.Enabled = !lockToolbar; // Отменить изменения
 
             рисунокToolStripMenuItem.Enabled = !lockToolbar;
             окноToolStripMenuItem.Enabled = !lockToolbar;
@@ -506,50 +523,42 @@ namespace Lab_1
 
         #endregion
 
+        #region Работа с плагинами
+
+        /// <summary>
+        /// Поиск плагинов в папке проекта
+        /// </summary>
         void FindPlugins()
         {
-            ConfigClass config = LoadConfig();
+            ConfigClass config = LoadConfig(); // Загружаем конфигурацию из файла 
             string folder = AppDomain.CurrentDomain.BaseDirectory;
-            string[] files = Directory.GetFiles(folder, "*.dll");
-
-            if (config.AutoLoad)
+            string[] files = Directory.GetFiles(folder, "*.dll"); // Ищем dll файлы в указанной папке
+            foreach (var pluginEntry in config.Plugins)
             {
-                LoadAllPlugins(files);
-            }
-            else
-            {
-                foreach (var pluginEntry in config.Plugins)
+                if (pluginEntry.Enabled) // Загружаем только включенные плагины
                 {
-                    if (pluginEntry.Enabled)
-                    {
-                        string filePath = Path.Combine(folder, pluginEntry.FileName);
-                        if (File.Exists(filePath))
-                        {
-                            LoadPluginFromFile(filePath);
-                        }
-                    }
+                    string filePath = Path.Combine(folder, pluginEntry.FileName); // Формируем путь к плагину
+                    if (File.Exists(filePath))
+                        LoadPluginFromFile(filePath); // Загружаем файл по пути
+                    else
+                        MessageBox.Show($"Файл не найден: {filePath}");
                 }
             }
-
-            // Сохраняем конфигурацию, если она изменилась
-            SaveConfig(config);
+            SaveConfig(config); // Сохраняем конфиг
         }
 
-        private void LoadAllPlugins(string[] files)
-        {
-            foreach (string file in files)
-            {
-                LoadPluginFromFile(file);
-            }
-        }
-
+        /// <summary>
+        /// Загрузка плагина
+        /// </summary>
+        /// <param name="file">Путь к плагину</param>
         private void LoadPluginFromFile(string file)
         {
             try
             {
-                Assembly assembly = Assembly.LoadFile(file);
-                foreach (Type type in assembly.GetTypes())
+                Assembly assembly = Assembly.LoadFile(file); // Загружаем сборку для проверки на наличие плагина
+                foreach (Type type in assembly.GetTypes()) 
                 {
+                    // Проходимся по всем типам и ищем те, которые реализуют IPlugin
                     Type iface = type.GetInterface("PluginInterface.IPlugin");
                     if (iface != null)
                     {
@@ -564,14 +573,17 @@ namespace Lab_1
             }
         }
 
+        /// <summary>
+        /// Загрузка конфигурации из файла
+        /// </summary>
+        /// <returns>Конфигурационный файл</returns>
         private ConfigClass LoadConfig()
         {
             if (!File.Exists(ConfigFilePath))
             {
-                // Создаем новый конфигурационный файл
-                ConfigClass config = new ConfigClass { AutoLoad = true };
+                ConfigClass config = new ConfigClass();
                 string folder = AppDomain.CurrentDomain.BaseDirectory;
-                string[] files = Directory.GetFiles(folder, "*.dll");
+                string[] files = Directory.GetFiles(folder, "*.dll", SearchOption.TopDirectoryOnly);
 
                 foreach (string file in files)
                 {
@@ -585,24 +597,61 @@ namespace Lab_1
                 return config;
             }
 
-            try
+            try // Если файл найден, пытаемся его прочитать
             {
-                string json = File.ReadAllText(ConfigFilePath);
-                return JsonSerializer.Deserialize<ConfigClass>(json) ?? new ConfigClass();
+                ConfigClass config = new ConfigClass();
+                string[] lines = File.ReadAllLines(ConfigFilePath);
+                foreach (string line in lines)
+                {
+                    string trimmed = line.Trim(); // Удаляем пробелы
+                    if (string.IsNullOrEmpty(trimmed)) // Пустые строки пропускаем
+                        continue;
+                    if (trimmed == "[Plugins]") // Пропускаем заголовок
+                        continue;
+                    var parts = trimmed.Split('='); // Разделяем строку по символу
+                    if (parts.Length == 2) // Если строка корректна, добавляем плагин
+                    {
+                        config.Plugins.Add(new PluginEntry
+                        {
+                            FileName = parts[0],
+                            Enabled = bool.Parse(parts[1])
+                        });
+                    }
+                }
+                return config;
             }
-            catch (Exception ex)
+            catch // Если при чтении возникла ошибка, резервный сценарий - создаем нвоый файлик
             {
-                MessageBox.Show($"Ошибка чтения конфигурационного файла: {ex.Message}");
-                return new ConfigClass();
-            }
+                ConfigClass config = new ConfigClass();
+                string folder = AppDomain.CurrentDomain.BaseDirectory;
+                string[] files = Directory.GetFiles(folder, "*.dll", SearchOption.TopDirectoryOnly);
+                foreach (string file in files)
+                {
+                    config.Plugins.Add(new PluginEntry
+                    {
+                        FileName = Path.GetFileName(file),
+                        Enabled = true
+                    });
+                }
+                SaveConfig(config);
+                return config;
+            }   
         }
 
+        /// <summary>
+        /// Сохранение конфигурации
+        /// </summary>
+        /// <param name="config">Конфигурационный файл</param>
         private void SaveConfig(ConfigClass config)
         {
             try
             {
-                string json = JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(ConfigFilePath, json);
+                List<string> lines = new List<string> { "[Plugins]" };
+                foreach (var plugin in config.Plugins)
+                {
+                    lines.Add($"{plugin.FileName}={plugin.Enabled}");
+                }
+                File.WriteAllLines(ConfigFilePath, lines);
             }
             catch (Exception ex)
             {
@@ -610,20 +659,82 @@ namespace Lab_1
             }
         }
 
+        /// <summary>
+        /// Создание меню плагинов
+        /// </summary>
         private void CreatePluginsMenu()
         {
+            // Перебираем словарь с плагинами
             foreach (var plugin in plugins)
             {
+                // Для каждого плагина новый пункт в меню
                 var item = фильтрыToolStripMenuItem.DropDownItems.Add(plugin.Value.Name);
-                item.Click += (sender, args) =>
+                // Если мы кликаем на плагин
+                item.Click += async (sender, args) =>
                 {
-                    // Получаем активную MDI-дочернюю форму
+                    // Подгружаем документ и изображение
                     FormNewDocument activeChild = ActiveMdiChild as FormNewDocument;
                     if (activeChild != null && activeChild.bitmap != null)
                     {
-                        // Вызываем плагин
-                        plugin.Value.Transform(activeChild.bitmap);
-                        activeChild.Invalidate(); // Перерисовываем форму
+                        try
+                        {
+                            cts = new CancellationTokenSource();
+                            progressBar.Value = 0;
+                            progressBar.Visible = true;
+                            LockToolbar(true);
+                            // Сохраняем копию изображения перед применением фильтра
+                            activeChild.undoStack.Push(new Bitmap(activeChild.bitmap));
+                            var progress = new Progress<int>(percent =>
+                            {
+                                if (this.InvokeRequired) // Код работает в фоновом потоке, непрямую к progressBar обратиться нельзя
+                                    this.Invoke(new Action(() => progressBar.Value = percent)); // Блокируем фоновый поток, чтобы внесии изменения
+                                else
+                                    progressBar.Value = percent;
+                            });
+
+                            // Проверяем, что метод есть в плагине
+                            var transformAsyncMethod = plugin.Value.GetType().GetMethod("TransformAsync");
+                            if (transformAsyncMethod != null)
+                            {
+                                // Вызываем этот метод
+                                await (Task)transformAsyncMethod.Invoke(plugin.Value, new object[] { activeChild.bitmap, progress, cts.Token });
+                            }
+                            else
+                            {
+                                var transformMethod = plugin.Value.GetType().GetMethod("Transform");
+                                if (transformMethod != null)
+                                {
+                                    transformMethod.Invoke(plugin.Value, new object[] { activeChild.bitmap });
+                                    progressBar.Value = 100;
+                                }
+                                else
+                                {
+                                    MessageBox.Show($"Плагин {plugin.Value.Name} не содержит метод Transform или TransformAsync.");
+                                    return;
+                                }
+                            }
+
+                            activeChild.IsModified = true;
+                            activeChild.Invalidate();
+                        }
+                        catch (Exception ex)
+                        {
+                            // Восстанавливаем изображение при ошибке
+                            if (activeChild.undoStack.Count > 0)
+                            {
+                                activeChild.bitmap.Dispose();
+                                activeChild.bitmap = activeChild.undoStack.Pop();
+                                activeChild.Invalidate();
+                            }
+                            MessageBox.Show($"Ошибка при применении фильтра: {ex.Message}");
+                        }
+                        finally
+                        {
+                            progressBar.Visible = false;
+                            LockToolbar(false);
+                            cts?.Dispose();
+                            cts = null;
+                        }
                     }
                     else
                     {
@@ -633,6 +744,9 @@ namespace Lab_1
             }
         }
 
+        /// <summary>
+        /// Демонстрация окна с плагинами
+        /// </summary>
         private void ShowPluginDialog()
         {
             ConfigClass config = LoadConfig();
@@ -644,16 +758,50 @@ namespace Lab_1
                     SaveConfig(config);
                     plugins.Clear();
                     фильтрыToolStripMenuItem.DropDownItems.Clear();
-                    фильтрыToolStripMenuItem.DropDownItems.Add("Управление плагинами").Click += (s, e) => ShowPluginDialog();
+                    // Добавляем пункт "Управление плагинами"
+                    var managePluginsItem = фильтрыToolStripMenuItem.DropDownItems.Add("Управление плагинами");
+                    managePluginsItem.Click += (s, e) => ShowPluginDialog();
+                    фильтрыToolStripMenuItem.DropDownItems.Add(new ToolStripSeparator());
                     FindPlugins();
                     CreatePluginsMenu();
                 }
             }
         }
-
+        
+        /// <summary>
+        /// Нажатие на список меню управления плагинами
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void управлениеПлагинамиToolStripMenuItem_Click(object sender, EventArgs e)
         {
             ShowPluginDialog();
         }
+        
+        /// <summary>
+        /// Нажатие на кнопку отмены
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void button1_Click(object sender, EventArgs e)
+        {
+            var doc = ActiveMdiChild as FormNewDocument;
+            if (doc != null && doc.undoStack.Count > 0)
+            {
+                // Освобождаем текущие изображения
+                doc.bitmap?.Dispose();
+                doc.bitmapTemp?.Dispose();
+                doc.bitmap = doc.undoStack.Pop(); // Восстанавливаем bitmap из undoStack
+                doc.bitmapTemp = new Bitmap(doc.bitmap); // Создаем новый bitmapTemp, клонируя bitmap
+                doc.IsModified = true;
+                doc.Invalidate();
+            }
+            else
+            {
+                MessageBox.Show("Нет действий для отмены.");
+            }
+        }
+
+        #endregion
     }
 }

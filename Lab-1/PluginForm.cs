@@ -9,10 +9,47 @@ namespace Lab_1
 {
     public partial class PluginForm : Form
     {
+        /// <summary>
+        /// Класс информации плагина
+        /// </summary>
+        private class PluginInfo
+        {
+            /// <summary>
+            /// Наименование плагина
+            /// </summary>
+            public string Name { get; set; }
+
+            /// <summary>
+            /// Файл плагина
+            /// </summary>
+            public string FileName { get; set; }
+
+            /// <summary>
+            /// Вкл/выкл. плагина
+            /// </summary>
+            public bool Enabled { get; set; }
+        }
+
+        /// <summary>
+        /// Информация о плагине
+        /// </summary>
         private readonly List<PluginInfo> pluginInfos; 
+
+        /// <summary>
+        /// Конфигурационный файл
+        /// </summary>
         private readonly ConfigClass config;
+
+        /// <summary>
+        /// Папка с плагинами
+        /// </summary>
         private readonly string pluginsFolder;
 
+        /// <summary>
+        /// Конструктор для инициализации формы
+        /// </summary>
+        /// <param name="config">Конфигурационный файл</param>
+        /// <param name="pluginsFolder">Папка с плагинами</param>
         public PluginForm(ConfigClass config, string pluginsFolder)
         {
             InitializeComponent();
@@ -55,6 +92,9 @@ namespace Lab_1
             LoadPlugins();
         }
 
+        /// <summary>
+        /// Загрузка плагинов в таблицу
+        /// </summary>
         private void LoadPlugins()
         {
             string[] files = Directory.GetFiles(pluginsFolder, "*.dll");
@@ -92,10 +132,11 @@ namespace Lab_1
             }
         }
 
-
+        /// <summary>
+        /// Обновление конфигурации
+        /// </summary>
         private void UpdateConfig()
         {
-            config.AutoLoad = false; // Отключаем автозагрузку, так как пользователь управляет плагинами вручную
             config.Plugins.Clear();
             foreach (DataGridViewRow row in pluginsGrid.Rows)
             {
@@ -103,13 +144,6 @@ namespace Lab_1
                 bool enabled = (bool)row.Cells["Enabled"].Value;
                 config.Plugins.Add(new PluginEntry { FileName = fileName, Enabled = enabled });
             }
-        }
-
-        private class PluginInfo
-        {
-            public string Name { get; set; }
-            public string FileName { get; set; }
-            public bool Enabled { get; set; }
         }
 
         private void saveButton_Click_1(object sender, EventArgs e)

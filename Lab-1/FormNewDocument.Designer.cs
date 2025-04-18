@@ -40,7 +40,7 @@
             this.DoubleBuffered = true;
             this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
             this.Name = "FormNewDocument";
-            this.Text = "FormNewDocument";
+            this.Text = "Новый документ";
             this.MouseDown += new System.Windows.Forms.MouseEventHandler(this.FormNewDocument_MouseDown);
             this.MouseLeave += new System.EventHandler(this.FormNewDocument_MouseLeave);
             this.MouseMove += new System.Windows.Forms.MouseEventHandler(this.FormNewDocument_MouseMove);

@@ -27,7 +27,7 @@ namespace Lab_1
         /// <summary>
         /// Временный холст с изображением
         /// </summary>
-        private Bitmap bitmapTemp;
+        public Bitmap bitmapTemp;
 
         /// <summary>
         /// Текущий масштаб холста
@@ -82,6 +82,8 @@ namespace Lab_1
         /// Текущий путь файла
         /// </summary>
         public string FilePath { get; set; }
+
+        public Stack<Bitmap> undoStack = new Stack<Bitmap>();
 
         #endregion
 
@@ -358,18 +360,24 @@ namespace Lab_1
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
-            if (bitmapTemp == null || this.ClientSize.Width <= 0 || this.ClientSize.Height <= 0)
+            if (bitmapTemp == null || bitmap == null || this.ClientSize.Width <= 0 || this.ClientSize.Height <= 0)
+            {
+                // Если изображение недоступно, рисуем белый фон
+                e.Graphics.Clear(Color.White);
                 return;
+            }
+
             e.Graphics.ScaleTransform(scale, scale); // Применяем масштаб к изображению
             e.Graphics.DrawImage(bitmapTemp, 0, 0); // Отрисовываем изображение
+
             // Предварительный просмотр многоугольника
             if (isDrawingPolygon && MainForm.CurrentTool == Tools.RegularPolygon)
             {
                 // Вычисляем радиус многоугольника
                 int radius = (int)Math.Sqrt(Math.Pow(polygonEnd.X - polygonStart.X, 2) + Math.Pow(polygonEnd.Y - polygonStart.Y, 2));
                 // Вычисляем вершины многоугольника
-                var vertices = CalculatePolygonVertices(polygonStart, radius, 6); // По умолчанию 6 сторон для предварительного просмотра
-                // Рисуем предварительный многоульник
+                var vertices = CalculatePolygonVertices(polygonStart, radius, 6); // По умолчанию 6 сторон
+                                                                                  // Рисуем предварительный многоугольник
                 using (var pen = new Pen(Color.Gray, 1))
                 {
                     pen.DashStyle = System.Drawing.Drawing2D.DashStyle.Dash; // Пунктир
@@ -428,6 +436,15 @@ namespace Lab_1
                     e.Cancel = true;
                 }
             }
+
+            // Очистка ресурсов
+            while (undoStack.Count > 0)
+            {
+                undoStack.Pop().Dispose();
+            }
+            bitmap?.Dispose();
+            bitmapTemp?.Dispose();
+
             base.OnFormClosing(e);
         }
 
@@ -552,5 +569,6 @@ namespace Lab_1
         }
 
         #endregion
+
     }
 }

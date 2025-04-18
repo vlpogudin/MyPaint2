@@ -1,4 +1,7 @@
-﻿using System.Drawing;
+﻿using System;
+using System.Drawing;
+using System.Threading.Tasks;
+using System.Threading;
 
 namespace PluginInterface
 {
@@ -6,7 +9,8 @@ namespace PluginInterface
     {
         string Name { get; }
         string Author { get; }
-        void Transform(Bitmap app);
+        Task TransformAsync(Bitmap bitmap, IProgress<int> progress, CancellationToken cancellationToken);
+        void Transform(Bitmap bitmap);
     }
 
 }
